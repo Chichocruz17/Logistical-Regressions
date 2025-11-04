@@ -15,17 +15,21 @@ fontsize: 11pt
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, 
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE,
                       fig.height = 4, fig.width = 6, fig.align = "center")
-install.packages("ggplot2") 
-install.packages("dplyr")
-install.packages("gridExtra")
-install.packages("car") 
 
-library(ggplot2)
-library(dplyr)
-library(gridExtra)
-library(car)
+# Set CRAN mirror
+options(repos = c(CRAN = "https://cloud.r-project.org/"))
+
+# Install packages if not already installed
+required_packages <- c("ggplot2", "dplyr", "gridExtra", "car", "corrplot")
+for (pkg in required_packages) {
+  if (!require(pkg, character.only = TRUE, quietly = TRUE)) {
+    install.packages(pkg)
+    library(pkg, character.only = TRUE)
+  }
+}
+
 set.seed(123)
 ```
 
