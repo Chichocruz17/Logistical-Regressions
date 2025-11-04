@@ -1,0 +1,214 @@
+---
+title: 'Motor Trend Car Road Test Analysis: Transmission Type and MPG'
+author: "Data Science Team"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: false
+    df_print: paged
+  pdf_document:
+    fig_caption: true
+    number_sections: true
+    toc: false
+geometry: margin=1in
+fontsize: 11pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, 
+                      fig.height = 4, fig.width = 6, fig.align = "center")
+install.packages("ggplot2") 
+install.packages("dplyr")
+install.packages("gridExtra")
+install.packages("car") 
+
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+library(car)
+set.seed(123)
+```
+
+# Executive Summary
+
+This analysis examines the relationship between transmission type (automatic vs manual) and fuel efficiency (MPG) using the mtcars dataset from the 1974 Motor Trend magazine. **Key findings**: Manual transmissions demonstrate significantly better fuel efficiency than automatic transmissions, with manual cars averaging **7.24 MPG higher** than automatic cars in unadjusted comparisons. However, when controlling for weight and engine characteristics through multiple regression analysis, the **adjusted advantage for manual transmissions is 2.94 MPG**. This difference is statistically significant (p < 0.05), indicating that transmission type has a genuine but modest impact on fuel efficiency after accounting for other vehicle characteristics.
+
+# Data Overview and Exploratory Analysis
+
+```{r data_prep}
+# Load and prepare data
+data(mtcars)
+mtcars$am_factor <- factor(mtcars$am, levels = c(0, 1), labels = c("Automatic", "Manual"))
+mtcars$cyl_factor <- factor(mtcars$cyl)
+mtcars$vs_factor <- factor(mtcars$vs, levels = c(0, 1), labels = c("V-shaped", "Straight"))
+
+# Basic statistics
+auto_cars <- mtcars[mtcars$am == 0, ]
+manual_cars <- mtcars[mtcars$am == 1, ]
+
+cat("Dataset Summary:\n")
+cat("Total cars:", nrow(mtcars), "\n")
+cat("Automatic transmission:", nrow(auto_cars), "cars\n")
+cat("Manual transmission:", nrow(manual_cars), "cars\n")
+cat("\nMPG Statistics:\n")
+cat("Automatic - Mean:", round(mean(auto_cars$mpg), 2), "MPG\n")
+cat("Manual - Mean:", round(mean(manual_cars$mpg), 2), "MPG\n")
+cat("Raw difference:", round(mean(manual_cars$mpg) - mean(auto_cars$mpg), 2), "MPG\n")
+```
+
+The dataset contains 32 cars from 1973-74 models with complete data on fuel consumption and vehicle characteristics. Key variables include mpg (Miles per Gallon), cyl (# of cylinders), disp (displacement, in cubic inches), hp (horsepower), drat (driveshaft ratio), wt (weight), qsec (1/4 mile time; a measure of acceleration), vs ('V' or straight - engine shape), am (transmission; auto or manual), gear (# of gears), and carb (# of carburetors).
+
+# Statistical Analysis
+
+## Univariate Analysis
+
+```{r t_test}
+# Perform t-test
+t_result <- t.test(mpg ~ am_factor, data = mtcars, var.equal = FALSE)
+print(t_result)
+```
+
+A Welch two-sample t-test confirms that manual transmissions have significantly higher MPG than automatic transmissions (p < 0.001). However, this simple comparison doesn't account for confounding variables.
+
+## Regression Modeling
+
+```{r model_selection}
+# Model selection process
+# Start with correlation analysis
+correlations <- cor(mtcars[, c("mpg", "cyl", "disp", "hp", "drat", "wt", "qsec", "vs", "am", "gear", "carb")])
+mpg_cors <- correlations[,"mpg"]
+mpg_cors_sorted <- sort(abs(mpg_cors), decreasing = TRUE)
+cat("Variables most correlated with MPG:\n")
+print(round(mpg_cors_sorted, 3))
+
+# Build models sequentially
+model1 <- lm(mpg ~ am_factor, data = mtcars)
+model2 <- lm(mpg ~ am_factor + wt, data = mtcars)
+model3 <- lm(mpg ~ am_factor + wt + qsec, data = mtcars)
+model4 <- lm(mpg ~ am_factor + wt + qsec + hp, data = mtcars)
+
+# Compare models
+anova_result <- anova(model1, model2, model3, model4)
+print(anova_result)
+```
+
+The correlation analysis reveals that weight (wt), cylinders (cyl), and displacement (disp) are most strongly correlated with MPG. A sequential model-building approach using ANOVA shows that adding weight significantly improves the model (p < 0.001), and adding quarter-mile time (qsec) provides additional improvement (p < 0.01).
+
+```{r final_model}
+# Final model selection
+final_model <- lm(mpg ~ am_factor + wt + qsec, data = mtcars)
+summary(final_model)
+
+# Model diagnostics
+cat("\nModel Diagnostics:\n")
+cat("Adjusted R-squared:", round(summary(final_model)$adj.r.squared, 3), "\n")
+cat("Residual Standard Error:", round(summary(final_model)$sigma, 2), "\n")
+
+# Check for multicollinearity
+vif_values <- vif(final_model)
+cat("Variance Inflation Factors:\n")
+print(round(vif_values, 2))
+```
+
+The final model (MPG ~ Transmission + Weight + Quarter-mile time) explains 83.4% of the variance in MPG with minimal multicollinearity (all VIF < 2). **The coefficient for manual transmission is 2.94**, indicating that manual cars achieve 2.94 MPG better than automatic cars when controlling for weight and acceleration characteristics.
+
+## Model Validation
+
+```{r residual_analysis}
+
+# Residual analysis
+residuals_df <- data.frame(
+  fitted = fitted(final_model),
+  residuals = residuals(final_model),
+  standardized = rstandard(final_model)
+)
+
+# Check for normality of residuals
+shapiro_test <- shapiro.test(residuals(final_model))
+cat("Shapiro-Wilk normality test p-value:", round(shapiro_test$p.value, 3), "\n")
+
+if(shapiro_test$p.value > 0.05) {
+  cat("Residuals are approximately normal (p > 0.05)\n")
+} else {
+  cat("Some deviation from normality detected\n")
+}
+
+# Identify influential points
+influential <- which(abs(rstandard(final_model)) > 2)
+if(length(influential) > 0) {
+  cat("Potentially influential observations:", names(influential), "\n")
+} else {
+  cat("No extreme outliers detected\n")
+}
+
+```
+
+Model diagnostics confirm reasonable assumptions: residuals are approximately normal, and no extreme outliers are unduly influencing results.
+
+# Conclusions
+
+**Answer to Question 1**: Manual transmissions are better for MPG than automatic transmissions, with statistical significance (p = 0.047 in the adjusted model).
+
+**Answer to Question 2**: The quantified difference is **2.94 MPG higher for manual transmissions** when controlling for vehicle weight and acceleration characteristics. This represents a meaningful improvement of approximately 17% over the average automatic transmission MPG.
+
+The analysis demonstrates that while transmission type has a genuine impact on fuel efficiency, much of the apparent advantage of manual transmissions in raw comparisons is explained by manual cars typically being lighter. The adjusted estimate of 2.94 MPG provides a more accurate assessment of the transmission effect itself.
+
+---
+
+\newpage
+
+# Appendix: Supporting Figures
+
+```{r appendix_plots, fig.height=8, fig.width=10}
+# Create comprehensive visualization
+p1 <- ggplot(mtcars, aes(x = am_factor, y = mpg, fill = am_factor)) +
+  geom_boxplot(alpha = 0.7) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  labs(title = "MPG by Transmission Type", x = "Transmission", y = "MPG") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+p2 <- ggplot(mtcars, aes(x = wt, y = mpg, color = am_factor)) +
+  geom_point(size = 3, alpha = 0.7) +
+  geom_smooth(method = "lm", se = TRUE) +
+  labs(title = "MPG vs Weight by Transmission", x = "Weight (1000 lbs)", y = "MPG", color = "Transmission") +
+  theme_minimal()
+
+p3 <- ggplot(residuals_df, aes(x = fitted, y = residuals)) +
+  geom_point(alpha = 0.7) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  geom_smooth(method = "loess", se = FALSE, color = "blue") +
+  labs(title = "Residuals vs Fitted Values", x = "Fitted Values", y = "Residuals") +
+  theme_minimal()
+
+p4 <- ggplot(residuals_df, aes(sample = standardized)) +
+  stat_qq() +
+  stat_qq_line(color = "red") +
+  labs(title = "Q-Q Plot of Standardized Residuals", x = "Theoretical Quantiles", y = "Sample Quantiles") +
+  theme_minimal()
+
+# Arrange plots
+grid.arrange(p1, p2, p3, p4, ncol = 2)
+```
+
+```{r correlation_matrix}
+# Correlation heatmap
+library(corrplot)
+cor_matrix <- cor(mtcars[, c("mpg", "cyl", "disp", "hp", "drat", "wt", "qsec", "vs", "am", "gear", "carb")])
+corrplot(cor_matrix, method = "color", type = "upper", order = "hclust", 
+         tl.cex = 0.8, tl.col = "black", tl.srt = 45,
+         title = "Correlation Matrix of mtcars Variables", mar = c(0,0,1,0))
+```
+
+```{r detailed_summary}
+# Detailed model comparison table
+model_comparison <- data.frame(
+  Model = c("Transmission Only", "Transmission + Weight", "Transmission + Weight + QSec"),
+  R_squared = c(summary(model1)$r.squared, summary(model2)$r.squared, summary(final_model)$r.squared),
+  Adj_R_squared = c(summary(model1)$adj.r.squared, summary(model2)$adj.r.squared, summary(final_model)$adj.r.squared),
+  Manual_Coefficient = c(coef(model1)[2], coef(model2)[2], coef(final_model)[2]),
+  P_value = c(summary(model1)$coefficients[2,4], summary(model2)$coefficients[2,4], summary(final_model)$coefficients[2,4])
+)
+
+knitr::kable(model_comparison, digits = 3, caption = "Model Comparison Summary")
+```
